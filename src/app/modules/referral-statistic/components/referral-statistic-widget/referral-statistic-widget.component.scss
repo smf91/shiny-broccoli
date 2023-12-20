@@ -1,0 +1,43 @@
+:host {
+  .widget {
+    border: 1px solid black;
+    display: grid;
+    grid-template-areas:
+      'chart chart overview'
+      'detail detail detail';
+    &__chart {
+      grid-area: chart;
+    }
+    &__overview {
+      grid-area: overview;
+      border: 1px solid gray;
+      border-radius: 4px;
+      margin: 0.5rem;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: space-around;
+      gap: 0.5rem;
+      .tile {
+        padding: 1rem;
+        border: 1px solid gray;
+        border-radius: 4px;
+        background-color: rgb(108, 234, 105);
+        color: #fff;
+        h3 {
+          font-size: 32px;
+          font-weight: 700;
+          text-decoration: underline;
+        }
+      }
+    }
+    &__detail {
+      grid-area: detail;
+      border: 1px solid gray;
+      border-radius: 4px;
+      margin: 0.5rem;
+      padding: 0.5rem;
+    }
+  }
+}

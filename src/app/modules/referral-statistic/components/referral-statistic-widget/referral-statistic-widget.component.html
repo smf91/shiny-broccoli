@@ -1,0 +1,16 @@
+<div class="widget">
+  <div class="widget__chart">
+    <aop-referral-statistic-chart [data]="chartData$ | async"></aop-referral-statistic-chart>
+  </div>
+  <div class="widget__overview">
+    <!-- {{ aggregatedData$ | async | json }} -->
+    <div class="tile" *ngFor="let i of aggregatedData$ | async">
+      <h3>{{ i.value }}</h3>
+      <span>{{ i.label }}</span>
+    </div>
+  </div>
+  <div class="widget__detail">
+    Lorem ipsum dolor sit amet, consectetur adipisicing elit. Voluptatibus, adipisci inventore? Id labore cupiditate natus molestiae? Quia
+    in voluptas aliquam explicabo perferendis quos, voluptatum soluta inventore itaque quidem. Laborum, et.
+  </div>
+</div>

@@ -1,0 +1,17 @@
+<div #dropdownMultiselect class="multiselect">
+  <div class="multiselect__input-wrapper">
+    <input
+      class="multiselect__input"
+      type="text"
+      [placeholder]="(selectedOptions$ | async).length > 0 ? (selectedOptions$ | async).join(', ') : placeholder"
+      [(ngModel)]="searchText"
+    />
+    <button class="multiselect__clear-button" (click)="clearSelections()">X</button>
+  </div>
+  <div class="multiselect__options" [hidden]="!(isDropdownOpen$ | async)">
+    <label class="multiselect__item" *ngFor="let i of options">
+      <input type="checkbox" [(ngModel)]="i[optionValue]" (ngModelChange)="onOptionChange(i)" />
+      {{ i[optionLabel] }}
+    </label>
+  </div>
+</div>
