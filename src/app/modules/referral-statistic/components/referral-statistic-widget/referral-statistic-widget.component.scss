@@ -5,6 +5,7 @@
     grid-template-areas:
       'chart chart overview'
       'detail detail detail';
+      gap: 0 1rem;
     &__chart {
       grid-area: chart;
     }
