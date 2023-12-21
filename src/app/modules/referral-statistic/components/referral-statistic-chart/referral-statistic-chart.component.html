@@ -1,2 +1,8 @@
 <!-- <pre>{{ data | json }}</pre> -->
 <div #chart id="chart"></div>
+
+<div class="popup" *ngIf="detailsPopup$ | async as data"> 
+  <!-- <pre>{{data | json}}</pre> -->
+</div>
+
+

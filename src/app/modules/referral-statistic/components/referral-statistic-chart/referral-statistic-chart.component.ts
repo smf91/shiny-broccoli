@@ -5,22 +5,39 @@ import {
   Component,
   ElementRef,
   Input,
+  OnDestroy,
   ViewChild,
 } from '@angular/core';
 import {
   ChartData,
   ChartDataItem,
 } from '../../models/data-visualisation.model';
-
-enum ChartsColors {
-  GREEN = '#45B271',
-  LIGHT_GREEN = '#8CE5AF',
-  BLUE = '#5F85BD',
-  LIGHT_BLUE = '#AAC7F2',
-}
+import {
+  BehaviorSubject,
+  EMPTY,
+  Observable,
+  Subject,
+  distinctUntilChanged,
+  fromEvent,
+  map,
+  mergeMap,
+  of,
+  takeUntil,
+  tap,
+} from 'rxjs';
 
 interface AxesMap {
   [key: string]: d3.Axis<any>;
+}
+interface DataPoint {
+  item: ChartDataItem;
+  lineIndex: number;
+  sourceName: string | number;
+}
+
+interface Marker {
+  svg: d3.Selection<SVGSVGElement, any, any, any>;
+  update: (dataPoint?: DataPoint) => void;
 }
 
 @Component({
@@ -29,7 +46,9 @@ interface AxesMap {
   templateUrl: './referral-statistic-chart.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ReferralStatisticChartComponent implements AfterViewInit {
+export class ReferralStatisticChartComponent
+  implements AfterViewInit, OnDestroy
+{
   @Input() set data(data: ChartData[]) {
     this._data = data.map((d) => ({
       ...d,
@@ -39,46 +58,54 @@ export class ReferralStatisticChartComponent implements AfterViewInit {
       })),
     }));
   }
-
   get data(): ChartData[] {
     return this._data;
   }
 
-  private _data: ChartData[];
-
-  @ViewChild('chart') chart: ElementRef;
+  @ViewChild('chart') chart: ElementRef<HTMLDivElement>;
   margin = { top: 20, right: 0, bottom: 25, left: 20 };
   width: number;
   height: number;
-
   xAxes: AxesMap = {};
   yAxes: AxesMap = {};
   lineGenerators: ((data: any) => d3.Line<[number, number]>)[] = [];
   // or
   // lineGenerators: ((data: ChartData) => d3.Line<[number, number]>)[] = [];
+  private readonly _detailsPopup$ = new BehaviorSubject<DataPoint[]>([]);
+  readonly detailsPopup$ = this._detailsPopup$.asObservable();
+  private _data: ChartData[];
+  private _mouseMove$: Observable<MouseEvent>;
+  private readonly _destroy$: Subject<void> = new Subject<void>();
+
+  // private group: d3.Selection<SVGGElement, any, any, any>; // Добавляем свойство для группы
 
   ngAfterViewInit(): void {
-    console.log('ChartData____________', this.data);
     this.createChart();
+    this._subscribeMouseMove();
+  }
+
+  ngOnDestroy(): void {
+    this._destroy$.next();
+    this._destroy$.complete();
   }
 
   createChart(): void {
-    this._initializationParamsChart();
+    this._calculateChartSize();
     this._createXaxes();
     this._createYaxes();
     this._createLineGenerators();
     this._createSVGcontainer();
+
+    this._subscribeUpdateDataPointMarkers();
   }
 
-  private _initializationParamsChart(): void {
+  private _calculateChartSize(): void {
     this.width =
       this.chart.nativeElement.clientWidth -
       (this.margin.left + this.margin.right);
     this.height =
       this.chart.nativeElement.clientHeight -
       (this.margin.top + this.margin.bottom);
-    console.log('this.width', this.width);
-    console.log('this.height', this.height);
   }
 
   private _createXaxes(): void {
@@ -138,10 +165,10 @@ export class ReferralStatisticChartComponent implements AfterViewInit {
       .attr('width', this.width)
       .attr('height', this.height)
       .attr('viewBox', [0, 0, this.width, this.height])
-      // .attr('style', 'max-width: 100%; height: 400px;');
-      // .attr('style', 'width: 100%; height: 400px;');
       .attr('class', 'svg-container');
-
+    // create cursor
+    this._createCrosshairVerticalLine(svg);
+    this._createCrosshairHorizontalLine(svg);
     this.chart.nativeElement.appendChild(svg.node());
     // TODO should be typed
     this._appendXaxes(svg);
@@ -195,17 +222,196 @@ export class ReferralStatisticChartComponent implements AfterViewInit {
   }
 
   private _appendPaths(svg: any): void {
-    console.log('this.data', this.data);
-    console.log('this.xA', this.xAxes);
-    console.log('this.yA', this.yAxes);
-    console.log('this.lineGenerators', this.lineGenerators);
     this.data.forEach((chartData, i) => {
       svg
         .append('path')
         .attr('fill', 'none')
         .attr('stroke', chartData.metadata['mark'])
         .attr('stroke-width', 1.5)
-        .attr('d', this.lineGenerators[i](chartData.items));
+        .attr('d', this.lineGenerators[i](chartData.items))
+        .attr('class', `line-${i}`);
     });
+  }
+
+  private _subscribeMouseMove(): void {
+    const chartContainer = this.chart.nativeElement;
+    const crosshairLines = d3.selectAll('.crosshair-line');
+    this._mouseMove$ = fromEvent<MouseEvent>(chartContainer, 'mousemove');
+
+    const rect = chartContainer.getBoundingClientRect();
+    this._mouseMove$
+      .pipe(
+        // debounceTime(150),
+        map((event) => {
+          // Getting the cursor position relative to the chart...
+          const x = event.clientX - rect.left - this.margin.left;
+          const y = event.clientY - rect.top - this.margin.top;
+          return { x, y };
+        }),
+        map((position) => {
+          if (
+            position.x >= 0 &&
+            position.x <= this.width &&
+            position.y >= 0 &&
+            position.y <= this.height
+          ) {
+            return position;
+          } else {
+            //TODO придумать что то кроме null
+            return { x: 0, y: 0 };
+          }
+        }),
+        distinctUntilChanged(
+          // filtering the same positions
+          (prev, curr) => prev.x === curr.x && prev.y === curr.y
+        ),
+        mergeMap((position) => {
+          if (position.x !== 0 && position.y !== 0) {
+            // TODO  отрефакторить с _createCrosshairVerticalLine и _createCrosshairHorizontalLine
+            crosshairLines
+              .filter((_, i) => i === 0) // vertical line
+              .attr('x1', position.x + this.margin.left)
+              .attr('x2', position.x + this.margin.left)
+              .attr('y1', 0)
+              .attr('y2', this.height)
+              .style('opacity', 1);
+            crosshairLines
+              .filter((_, i) => i === 1) // horizontal line
+              .attr('x1', 0)
+              .attr('x2', this.width)
+              .attr('y1', position.y + this.margin.top)
+              .attr('y2', position.y + this.margin.top)
+              .style('opacity', 1);
+            //______________________________________
+          } else {
+            crosshairLines.style('opacity', 0);
+          }
+
+          const nearestDataPoints: DataPoint[] = this._findNearestDataPoints(
+            position.x,
+            position.y
+          );
+          return nearestDataPoints ? of(nearestDataPoints) : EMPTY;
+        }),
+        takeUntil(this._destroy$)
+      )
+      .subscribe((nearestDataPoints) => {
+        this._detailsPopup$.next(nearestDataPoints);
+      });
+  }
+
+  private _createCrosshairVerticalLine(svg: any): void {
+    svg
+      .append('line')
+      .attr('class', 'crosshair-line')
+      .attr('x1', 0)
+      .attr('x2', 0)
+      .attr('y1', 0)
+      .attr('y2', this.height)
+      .style('stroke', 'gray')
+      .style('stroke-width', 1)
+      .style('opacity', 0);
+  }
+
+  private _createCrosshairHorizontalLine(svg: any): void {
+    svg
+      .append('line')
+      .attr('class', 'crosshair-line')
+      .attr('x1', 0)
+      .attr('x2', this.width)
+      .attr('y1', 0)
+      .attr('y2', 0)
+      .style('stroke', 'gray')
+      .style('stroke-width', 1)
+      .style('opacity', 0);
+  }
+
+  private _findNearestDataPoints(x: number, y: number): DataPoint[] {
+    const nearestDataPoints: DataPoint[] = [];
+
+    const minDistances: number[] = Array(this.data.length).fill(Infinity);
+
+    this.data.forEach((chartData: ChartData, lineIndex: number) => {
+      chartData.items.forEach((dataPoint: ChartDataItem) => {
+        const distance = Math.sqrt(
+          Math.pow(
+            x -
+              this.xAxes[chartData.metadata['sourceName']](dataPoint.timestamp),
+            2
+          ) +
+            Math.pow(
+              y - this.yAxes[chartData.metadata['sourceName']](dataPoint.value),
+              2
+            )
+        );
+
+        if (distance < minDistances[lineIndex]) {
+          minDistances[lineIndex] = distance;
+          nearestDataPoints[lineIndex] = {
+            item: dataPoint,
+            lineIndex,
+            sourceName: chartData.metadata['sourceName'], // Добавляем sourceName
+          };
+        }
+      });
+    });
+
+    return nearestDataPoints.filter((point) => point.lineIndex !== undefined);
+  }
+
+  private _subscribeUpdateDataPointMarkers(): void {
+    this.detailsPopup$
+      .pipe(
+        tap((nearestDataPoints) => {
+          nearestDataPoints.forEach((dataPoint) => {
+            this._removeMarkers();
+            const markPoint = this._createMarker(dataPoint);
+            // this._appendMarkerToline(markPoint, dataPoint.lineIndex);
+            this._addMarkerToLine(markPoint, dataPoint.lineIndex);
+          });
+        }),
+
+        takeUntil(this._destroy$)
+      )
+      .subscribe();
+  }
+
+  private _removeMarkers(): void {
+    const chartContainer = this.chart.nativeElement;
+    d3.select(chartContainer).selectAll('.data-point-marker').remove();
+  }
+
+  private _createMarker(dataPoint: DataPoint): Marker {
+    const svg = d3
+      .create('svg')
+      .attr('width', 10)
+      .attr('height', 10)
+      .attr('class', `data-point-marker`);
+    const circle = svg.append('circle').attr('r', 5); // Здесь задаем радиус маркера, он останется неизменным
+
+    console.log(
+      'xAxes_____',
+      Math.round(this.xAxes[dataPoint.sourceName](dataPoint.item.timestamp))
+    );
+    console.log(
+      'yAxes_____',
+      Math.round(this.yAxes[dataPoint.sourceName](dataPoint.item.value))
+    );
+    // svg.update = function () {
+    //   // Обновляем координаты маркера при необходимости
+    //   circle
+    //     .attr('cx', this.xAxes[dataPoint.sourceName](dataPoint.item.timestamp))
+    //     .attr('cy', this.yAxes[dataPoint.sourceName](dataPoint.item.value));
+    // };
+    console.log('svg marker_______', svg);
+    // svg.update();
+    return <Marker>svg.node();
+  }
+
+  private _addMarkerToLine(marker: Marker, lineIndex: number): void {
+    const chartContainer = this.chart.nativeElement;
+    const linePath = d3.select(chartContainer).select(`.line-${lineIndex}`);
+    linePath.node().appendChild(marker);
+    console.log('linePath_____', linePath);
   }
 }
