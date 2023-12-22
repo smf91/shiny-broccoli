@@ -1,58 +1,50 @@
 :host {
-  
   @mixin border-styles {
-    border: 1px solid gray;
+    border: 2px solid #4285f4; 
     border-radius: 20px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
   }
 
   .widget {
-    // border: 1px solid black;
     display: grid;
     grid-template-areas:
       'chart chart overview'
       'detail detail detail';
-      gap: 2rem;
+    gap: 2rem;
+    background-color: #f2f2f2; 
+
     &__chart {
       grid-area: chart;
       @include border-styles;
+      min-height: 350px;
+      background-color: rgba(66, 134, 244, 0.4); 
     }
     &__overview {
       grid-area: overview;
       @include border-styles;
-      padding: 0.5rem;
+      padding: 1.5rem; 
       display: flex;
       flex-direction: row;
-      align-items: flex-start;
-      justify-content: space-around;
-      gap: 0.5rem;
-
-
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
 
       .tile {
-        padding: 1rem;
-        border: 1px solid gray;
-        border-radius: 4px;
-        background-color: rgb(108, 234, 105);
+        @include border-styles;
+        padding: 2rem; 
+        background-color: #4285f4; /* Изменяем цвет */
         color: #fff;
         h3 {
-          font-size: 32px;
+          font-size: 24px;
           font-weight: 700;
-          text-decoration: underline;
+          text-decoration: none;
         }
       }
     }
     &__detail {
       grid-area: detail;
       @include border-styles;
-      padding: 0.5rem;
+      padding: 1.5rem; 
     }
-
-  //   .shadow {
-  //     --tw-shadow: 0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1) !important;
-  //     --tw-shadow-colored: 0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color) !important;
-  //     box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000),var(--tw-ring-shadow, 0 0 #0000),var(--tw-shadow)!important;
-  // }
-  
-  
   }
 }

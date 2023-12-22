@@ -25,6 +25,10 @@ import {
   takeUntil,
   tap,
 } from 'rxjs';
+import {
+  CompareTimestamps,
+  BinarySearchNearestPoint,
+} from '../../_tools/utils';
 
 interface AxesMap {
   [key: string]: d3.Axis<any>;
@@ -33,11 +37,6 @@ interface DataPoint {
   item: ChartDataItem;
   lineIndex: number;
   sourceName: string | number;
-}
-
-interface Marker {
-  svg: d3.Selection<SVGSVGElement, any, any, any>;
-  update: (dataPoint?: DataPoint) => void;
 }
 
 @Component({
@@ -71,13 +70,17 @@ export class ReferralStatisticChartComponent
   lineGenerators: ((data: any) => d3.Line<[number, number]>)[] = [];
   // or
   // lineGenerators: ((data: ChartData) => d3.Line<[number, number]>)[] = [];
+  xTickSize = 80;
+  yTickSize = 25;
   private readonly _detailsPopup$ = new BehaviorSubject<DataPoint[]>([]);
   readonly detailsPopup$ = this._detailsPopup$.asObservable();
   private _data: ChartData[];
   private _mouseMove$: Observable<MouseEvent>;
   private readonly _destroy$: Subject<void> = new Subject<void>();
 
-  // private group: d3.Selection<SVGGElement, any, any, any>; // Добавляем свойство для группы
+  get chartContainer(): HTMLDivElement {
+    return this.chart.nativeElement;
+  }
 
   ngAfterViewInit(): void {
     this.createChart();
@@ -95,7 +98,6 @@ export class ReferralStatisticChartComponent
     this._createYaxes();
     this._createLineGenerators();
     this._createSVGcontainer();
-
     this._subscribeUpdateDataPointMarkers();
   }
 
@@ -185,7 +187,7 @@ export class ReferralStatisticChartComponent
         .call(
           d3
             .axisBottom(this.xAxes[chartData.metadata['sourceName']])
-            .ticks(this.width / 50)
+            .ticks(this.width / this.xTickSize)
             .tickSizeOuter(0)
         );
     });
@@ -199,7 +201,7 @@ export class ReferralStatisticChartComponent
         .call(
           d3
             .axisLeft(this.yAxes[chartData.metadata['sourceName']])
-            .ticks(this.height / 25)
+            .ticks(this.height / this.yTickSize)
         )
         .call((g) => g.select('.domain').remove())
         .call((g) =>
@@ -234,14 +236,13 @@ export class ReferralStatisticChartComponent
   }
 
   private _subscribeMouseMove(): void {
-    const chartContainer = this.chart.nativeElement;
     const crosshairLines = d3.selectAll('.crosshair-line');
-    this._mouseMove$ = fromEvent<MouseEvent>(chartContainer, 'mousemove');
+    this._mouseMove$ = fromEvent<MouseEvent>(this.chartContainer, 'mousemove');
 
-    const rect = chartContainer.getBoundingClientRect();
+    const rect = this.chartContainer.getBoundingClientRect();
     this._mouseMove$
       .pipe(
-        // debounceTime(150),
+        // debounceTime(40),
         map((event) => {
           // Getting the cursor position relative to the chart...
           const x = event.clientX - rect.left - this.margin.left;
@@ -257,7 +258,7 @@ export class ReferralStatisticChartComponent
           ) {
             return position;
           } else {
-            //TODO придумать что то кроме null
+            //TODO should be checked
             return { x: 0, y: 0 };
           }
         }),
@@ -268,21 +269,24 @@ export class ReferralStatisticChartComponent
         mergeMap((position) => {
           if (position.x !== 0 && position.y !== 0) {
             // TODO  отрефакторить с _createCrosshairVerticalLine и _createCrosshairHorizontalLine
+            // vertical line
             crosshairLines
-              .filter((_, i) => i === 0) // vertical line
+              .filter((_, i) => i === 0)
               .attr('x1', position.x + this.margin.left)
               .attr('x2', position.x + this.margin.left)
               .attr('y1', 0)
               .attr('y2', this.height)
               .style('opacity', 1);
+            // horizontal line
             crosshairLines
-              .filter((_, i) => i === 1) // horizontal line
+              .filter((_, i) => i === 1)
               .attr('x1', 0)
               .attr('x2', this.width)
               .attr('y1', position.y + this.margin.top)
               .attr('y2', position.y + this.margin.top)
               .style('opacity', 1);
-            //______________________________________
+
+            this.chartContainer.style.cursor = 'none';
           } else {
             crosshairLines.style('opacity', 0);
           }
@@ -329,89 +333,62 @@ export class ReferralStatisticChartComponent
   private _findNearestDataPoints(x: number, y: number): DataPoint[] {
     const nearestDataPoints: DataPoint[] = [];
 
-    const minDistances: number[] = Array(this.data.length).fill(Infinity);
+    this.data.forEach((data: ChartData, lineIndex: number) => {
+      const sortedData = data.items.sort((a, b) =>
+        CompareTimestamps(a.timestamp, b.timestamp)
+      );
+      const closestIndex = BinarySearchNearestPoint(
+        sortedData,
+        x,
+        y,
+        (dataPoint) =>
+          this.xAxes[data.metadata['sourceName']](dataPoint.timestamp),
+        (dataPoint) => this.yAxes[data.metadata['sourceName']](dataPoint.value)
+      );
 
-    this.data.forEach((chartData: ChartData, lineIndex: number) => {
-      chartData.items.forEach((dataPoint: ChartDataItem) => {
-        const distance = Math.sqrt(
-          Math.pow(
-            x -
-              this.xAxes[chartData.metadata['sourceName']](dataPoint.timestamp),
-            2
-          ) +
-            Math.pow(
-              y - this.yAxes[chartData.metadata['sourceName']](dataPoint.value),
-              2
-            )
-        );
-
-        if (distance < minDistances[lineIndex]) {
-          minDistances[lineIndex] = distance;
-          nearestDataPoints[lineIndex] = {
-            item: dataPoint,
-            lineIndex,
-            sourceName: chartData.metadata['sourceName'], // Добавляем sourceName
-          };
-        }
-      });
+      if (closestIndex !== -1) {
+        nearestDataPoints.push({
+          item: sortedData[closestIndex],
+          lineIndex,
+          sourceName: data.metadata['sourceName'],
+        });
+      }
     });
 
-    return nearestDataPoints.filter((point) => point.lineIndex !== undefined);
+    return nearestDataPoints;
   }
 
   private _subscribeUpdateDataPointMarkers(): void {
     this.detailsPopup$
       .pipe(
+        tap(() => this._removeMarkers()),
         tap((nearestDataPoints) => {
-          nearestDataPoints.forEach((dataPoint) => {
-            this._removeMarkers();
-            const markPoint = this._createMarker(dataPoint);
-            // this._appendMarkerToline(markPoint, dataPoint.lineIndex);
-            this._addMarkerToLine(markPoint, dataPoint.lineIndex);
+          const svg = d3.select(this.chart.nativeElement).select('svg');
+          nearestDataPoints.forEach((point: DataPoint) => {
+            const x = this.xAxes[point.sourceName](point.item.timestamp);
+            const y = this.yAxes[point.sourceName](point.item.value);
+            this._createMarker(svg, x, y);
           });
         }),
-
         takeUntil(this._destroy$)
       )
       .subscribe();
   }
 
+  private _createMarker(
+    svg: d3.Selection<SVGGElement, unknown, null, undefined>,
+    x: number,
+    y: number
+  ): void {
+    svg
+      .append('circle')
+      .attr('cx', Math.round(x))
+      .attr('cy', Math.round(y))
+      .attr('r', 5)
+      .attr('class', 'data-point-marker');
+  }
+
   private _removeMarkers(): void {
-    const chartContainer = this.chart.nativeElement;
-    d3.select(chartContainer).selectAll('.data-point-marker').remove();
-  }
-
-  private _createMarker(dataPoint: DataPoint): Marker {
-    const svg = d3
-      .create('svg')
-      .attr('width', 10)
-      .attr('height', 10)
-      .attr('class', `data-point-marker`);
-    const circle = svg.append('circle').attr('r', 5); // Здесь задаем радиус маркера, он останется неизменным
-
-    console.log(
-      'xAxes_____',
-      Math.round(this.xAxes[dataPoint.sourceName](dataPoint.item.timestamp))
-    );
-    console.log(
-      'yAxes_____',
-      Math.round(this.yAxes[dataPoint.sourceName](dataPoint.item.value))
-    );
-    // svg.update = function () {
-    //   // Обновляем координаты маркера при необходимости
-    //   circle
-    //     .attr('cx', this.xAxes[dataPoint.sourceName](dataPoint.item.timestamp))
-    //     .attr('cy', this.yAxes[dataPoint.sourceName](dataPoint.item.value));
-    // };
-    console.log('svg marker_______', svg);
-    // svg.update();
-    return <Marker>svg.node();
-  }
-
-  private _addMarkerToLine(marker: Marker, lineIndex: number): void {
-    const chartContainer = this.chart.nativeElement;
-    const linePath = d3.select(chartContainer).select(`.line-${lineIndex}`);
-    linePath.node().appendChild(marker);
-    console.log('linePath_____', linePath);
+    d3.select(this.chartContainer).selectAll('.data-point-marker').remove();
   }
 }
