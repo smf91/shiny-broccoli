@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import {
-  AdministrationRoutes,
   CompanyInfo,
   CountryInfo,
   ReferralStatisticsQueryParams,
@@ -10,11 +9,10 @@ import {
 } from '../models/models';
 import { map } from 'rxjs/operators';
 import * as jsonData from '../_assets/mock.json';
-import { environment } from '../../../../environments/environment';
 
 @Injectable()
 export class ReferralStatisticApiService {
-  baseUrl: string = environment.apiUrl;
+  baseUrl: string = 'http://localhost:3000';
 
   constructor(private readonly _http: HttpClient) {}
 
@@ -29,7 +27,7 @@ export class ReferralStatisticApiService {
 
   // get a list of countries
   getCountries(search: string): Observable<CountryInfo[]> {
-    const params = new HttpParams().set('search', search); //TODO добавить пагинацию и изменить url
+    const params = new HttpParams().set('search', search);
     // return this._http.get<CountryInfo[]>(this.baseUrl + AdministrationRoutes.ADMINISTRATION + '/get', { params });
     return of([
       { name: 'United States', code: '+1' },
@@ -55,7 +53,7 @@ export class ReferralStatisticApiService {
 
   // get a list of company
   getCompanies(search: string): Observable<CompanyInfo[]> {
-    const params = new HttpParams().set('search', search); //TODO добавить пагинацию и изменить url
+    const params = new HttpParams().set('search', search);
     // return this._http.get<CompanyInfo[]>(this.baseUrl + AdministrationRoutes.ADMINISTRATION + '/get', { params });
     return of([
       { name: 'GlobalTech Solutions', id: '+1' },
